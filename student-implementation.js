@@ -47,22 +47,29 @@ async function fetchNews() {
     try {
         // TODO: Define the API endpoint
         // HINT: https://newsapi.org/v2/top-headlines
-        const url = '';
+        const url = 'https://newsapi.org/v2/top-headlines';
         
         // TODO: Set up query parameters
         // HINT: You need apiKey, country ('us'), category ('technology'), pageSize (5)
         const params = {
             apiKey: process.env.NEWSAPI_KEY,
-            // Add more parameters here
+            country: 'us',
+            category: 'technology',
+            pageSize: 5,
         };
         
         // TODO: Make the GET request
         // HINT: await axios.get(url, { params })
-        const response = null;
+        const response = await axios.get(url, { params });
         
         // TODO: Extract articles from response
         // HINT: response.data.articles
-        const articles = [];
+        let articles;
+        if (response && response.data && response.data.articles) {
+            articles = response.data.articles;
+        } else {
+            articles = [];
+        }
         
         helpers.logSuccess(`Fetched ${articles.length} news articles`);
         
@@ -115,20 +122,21 @@ async function generateScript(articles) {
     try {
         // TODO: Format articles for the AI
         // HINT: Use helpers.formatArticlesForSummary(articles)
-        const formattedNews = '';
+        const formattedNews = helpers.formatArticlesForSummary(articles);
         
         // TODO: Create the AI prompt
         // HINT: Use helpers.createPodcastPrompt(formattedNews)
-        const prompt = '';
+        const prompt = helpers.createPodcastPrompt(formattedNews);
         
         // TODO: Define the OpenAI endpoint
         // HINT: https://api.openai.com/v1/chat/completions
-        const url = '';
+        const url = 'https://api.openai.com/v1/chat/completions';
         
         // TODO: Set up request headers
         // HINT: Need Authorization: Bearer YOUR_API_KEY and Content-Type: application/json
         const headers = {
-            // Add headers here
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
         };
         
         // TODO: Create the request body
@@ -136,10 +144,8 @@ async function generateScript(articles) {
         const data = {
             model: 'gpt-3.5-turbo',
             messages: [
-                {
-                    role: 'user',
-                    content: prompt
-                }
+                { role: 'system', content: 'You are a helpful podcast writer.' },
+                { role: 'user', content: prompt }
             ],
             temperature: 0.7,
             max_tokens: 500
@@ -147,17 +153,21 @@ async function generateScript(articles) {
         
         // TODO: Make the POST request
         // HINT: await axios.post(url, data, { headers })
-        const response = null;
+        const response = await axios.post(url, data, { headers });
         
         // TODO: Extract the script text
         // HINT: response.data.choices[0].message.content
-        const script = '';
+        let script = '';
+        if (response && response.data && response.data.choices && response.data.choices[0] && response.data.choices[0].message && response.data.choices[0].message.content) {
+            script = response.data.choices[0].message.content.trim();
+        }
         
         helpers.logSuccess('Podcast script generated');
         console.log(`   Script length: ${script.length} characters`);
         
         // TODO: Save the script to a file
         // HINT: Use helpers.saveTextFile(script, 'podcast-script.txt')
+        await helpers.saveTextFile(script, 'podcast-script.txt');
         
         return script;
         
@@ -200,11 +210,16 @@ async function generateAudio(text) {
     try {
         // TODO: Get the voice ID from environment or use default
         // HINT: process.env.PODCAST_VOICE_ID || '21m00Tcm4TlvDq8ikWAM'
-        const voiceId = '21m00Tcm4TlvDq8ikWAM';
+        let voiceId;
+        if (process.env.PODCAST_VOICE_ID) {
+            voiceId = process.env.PODCAST_VOICE_ID;
+        } else {
+            voiceId = '21m00Tcm4TlvDq8ikWAM';
+        }
         
         // TODO: Construct the URL with voice ID
         // HINT: `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`
-        const url = '';
+        const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
         
         // TODO: Set up headers (IMPORTANT: ElevenLabs uses 'xi-api-key', not 'Authorization'!)
         const headers = {
@@ -225,15 +240,18 @@ async function generateAudio(text) {
         
         // TODO: Make the POST request (IMPORTANT: Must use responseType: 'arraybuffer'!)
         // HINT: await axios.post(url, data, { headers, responseType: 'arraybuffer' })
-        const response = null;
+        const response = await axios.post(url, data, {
+            headers: headers,
+            responseType: 'arraybuffer'
+        });
         
         // TODO: Generate a filename with timestamp
         // HINT: Use helpers.generateTimestampedFilename('podcast', 'mp3')
-        const filename = 'podcast.mp3';
+        const filename = helpers.generateTimestampedFilename('podcast', 'mp3');
         
         // TODO: Save the audio file
         // HINT: Use helpers.saveAudioFile(response.data, filename)
-        const filePath = '';
+        const filePath = await helpers.saveAudioFile(response.data, filename);
         
         helpers.logSuccess(`Audio generated: ${filename}`);
         
@@ -282,7 +300,11 @@ async function generatePodcast() {
         
         if (!validation.valid) {
             console.error('\n❌ Missing required environment variables:');
-            validation.missing.forEach(v => console.error(`   - ${v}`));
+            if (validation.missing && validation.missing.length > 0) {
+                for (let i = 0; i < validation.missing.length; i++) {
+                    console.error('   - ' + validation.missing[i]);
+                }
+            }
             console.error('\n💡 Copy .env.example to .env and add your API keys\n');
             process.exit(1);
         }
@@ -291,7 +313,7 @@ async function generatePodcast() {
         
         // TODO: Fetch news articles
         // HINT: await fetchNews()
-        const articles = null;
+        const articles = await fetchNews();
         
         // TODO: Validate we got articles
         if (!articles || articles.length === 0) {
@@ -300,7 +322,7 @@ async function generatePodcast() {
         
         // TODO: Generate podcast script
         // HINT: await generateScript(articles)
-        const script = null;
+        const script = await generateScript(articles);
         
         // TODO: Validate we got a script
         if (!script || script.length === 0) {
@@ -309,10 +331,10 @@ async function generatePodcast() {
         
         // TODO: Generate audio
         // HINT: await generateAudio(script)
-        const audioFilePath = null;
+        const audioFilePath = await generateAudio(script);
         
         // TODO: Validate we got an audio file
-        if (!audioFilePath) {
+        if (!audioFilePath || typeof audioFilePath !== 'string') {
             throw new Error('No audio file generated');
         }
         
